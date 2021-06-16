@@ -7,9 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"reflect"
-
-	"github.com/google/go-querystring/query"
+	"strings"
 )
 
 // API endpoint base constants
@@ -46,77 +44,47 @@ func NewClient(apiKey string, httpClient *http.Client) (*Client, error) {
 	return c, nil
 }
 
-// mergeQuery method
-func (c *Client) mergeQuery(path string, q interface{}) (string, error) {
-	v := reflect.ValueOf(q)
-	if v.Kind() == reflect.Ptr && v.IsNil() {
-		return path, nil
-	}
-
-	u, err := url.Parse(path)
-	if err != nil {
-		return path, err
-	}
-
-	qs, err := query.Values(q)
-	if err != nil {
-		return path, err
-	}
-
-	u.RawQuery = qs.Encode()
-	return u.String(), nil
-}
-
 // NewV1Request method
-func (c *Client) NewV1Request(method, path string, body interface{}) (*http.Request, error) {
-	return c.newRequest(c.endpointV1, method, path, body)
+func (c *Client) NewV1Request(method, path string, body url.Values) (*http.Request, error) {
+
+	u, err := c.endpointV1.Parse(path)
+	if err != nil {
+		return nil, err
+	}
+
+	body.Set("api_key", c.apiKey)
+
+	req, err := http.NewRequest(method, u.String(), strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return req, nil
 }
 
 // NewV2Request method
 func (c *Client) NewV2Request(method, path string, body interface{}) (*http.Request, error) {
-	return c.newRequest(c.endpointV2, method, path, body)
-}
 
-// newRequest method
-func (c *Client) newRequest(endpoint *url.URL, method, path string, body interface{}) (*http.Request, error) {
-
-	if req, ok := body.(Request); ok {
-		req.SetAPIKey(c.apiKey)
-	}
-
-	switch method {
-	case http.MethodGet, http.MethodDelete:
-		if body != nil {
-			merged, err := c.mergeQuery(path, body)
-			if err != nil {
-				return nil, err
-			}
-			path = merged
-		}
-	}
-	u, err := endpoint.Parse(path)
+	u, err := c.endpointV2.Parse(path)
 	if err != nil {
 		return nil, err
 	}
 
-	var reqBody io.ReadWriter
-	switch method {
-	case http.MethodPost, http.MethodPut:
-		if body != nil {
-			b, err := json.Marshal(body)
-			if err != nil {
-				return nil, err
-			}
-			reqBody = bytes.NewBuffer(b)
-		}
+	if req, ok := body.(RequestV2); ok {
+		req.SetAPIKey(c.apiKey)
 	}
 
-	req, err := http.NewRequest(method, u.String(), reqBody)
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(method, u.String(), bytes.NewBuffer(bodyBytes))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "*/*")
 	return req, nil
 }
 
@@ -150,19 +118,19 @@ func (c *Client) Do(ctx context.Context, req *http.Request, v interface{}) (*htt
 	return resp, err
 }
 
-type request struct {
+type requestV2 struct {
 	APIKey string `json:"api_key"`
 }
 
-func (r *request) SetAPIKey(v string) {
+func (r *requestV2) SetAPIKey(v string) {
 	r.APIKey = v
 }
 
-type Request interface {
+type RequestV2 interface {
 	SetAPIKey(string)
 }
 
-type response struct {
+type responseV2 struct {
 	Code  int    `json:"code"`
 	Error string `json:"error,omitempty"`
 }

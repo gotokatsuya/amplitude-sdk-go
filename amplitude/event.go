@@ -45,12 +45,12 @@ type Event struct {
 }
 
 type LogEventRequest struct {
-	request
+	requestV2
 	Events []Event `json:"events"`
 }
 
 type LogEventResponse struct {
-	response
+	responseV2
 	EventsIngested   int   `json:"events_ingested,omitempty"`
 	PayloadSizeBytes int   `json:"payload_size_bytes,omitempty"`
 	ServerUploadTime int64 `json:"server_upload_time,omitempty"`
